@@ -4,7 +4,7 @@ import { DateDistance } from '@/components/common/DateDistance';
 import { LinkButton } from '@/components/common/LinkButton';
 import { SortableLabel } from '@/components/common/SortableLabel';
 import { useMessages, useNavigation } from '@/components/hooks';
-import { useWebsiteStatsQuery } from '@/components/hooks/useWebsiteStatsQuery';
+import { useWebsiteStatsQuery } from '@/components/hooks/queries/useWebsiteStatsQuery';
 import { SquarePen } from '@/components/icons';
 
 export interface WebsiteRow {

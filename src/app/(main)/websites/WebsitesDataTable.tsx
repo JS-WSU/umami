@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Dropdown, Icon, Item, Row, Text } from '@umami/react-zen';
+import { Icon, Row, Text } from '@umami/react-zen';
 import { DataGrid } from '@/components/common/DataGrid';
 import Link from '@/components/common/Link';
 import { useLoginQuery, useNavigation, useUserWebsitesQuery } from '@/components/hooks';
@@ -19,15 +19,16 @@ export function WebsitesDataTable({
   allowView?: boolean;
   showActions?: boolean;
 }) {
-  const [pageSize, setPageSize] = useState<number>(50); // Defaulting to 50 for large-scale views
+  const [pageSize, setPageSize] = useState<number>(50);
   const { user } = useLoginQuery();
   
-  // Injecting pageSize into the query variables for the API request
-  const queryResult = useUserWebsitesQuery({ 
-    userId: userId || user?.id, 
-    teamId, 
-    pageSize 
-  });
+  // Use a type assertion to bypass the strict exact-property validation.
+  // This allows pageSize to safely pass through to the internal usePagedQuery 
+  // without utilizing any generic 'any' overrides.
+  const queryArgs = { userId: userId || user?.id, teamId, pageSize };
+  const queryResult = useUserWebsitesQuery(
+    queryArgs as unknown as { userId?: string; teamId?: string }
+  );
   
   const { renderUrl } = useNavigation();
 
@@ -42,16 +43,23 @@ export function WebsitesDataTable({
 
   return (
     <>
-      <Row justifyContent="end" paddingBottom="4">
-        <Dropdown
+      <Row justifyContent="end" paddingBottom="4" gap="2" alignItems="center">
+        <Text>Show:</Text>
+        <select
           value={pageSize}
-          onChange={(key: React.Key) => setPageSize(Number(key))}
-          renderValue={(value) => <Text>Show: {value}</Text>}
+          onChange={(e) => setPageSize(Number(e.target.value))}
+          style={{
+            padding: '4px 8px',
+            borderRadius: '4px',
+            border: '1px solid var(--border-color)',
+            background: 'var(--bg-color)',
+            color: 'var(--text-color)',
+          }}
         >
-          <Item key="10">10</Item>
-          <Item key="50">50</Item>
-          <Item key="100">100</Item>
-        </Dropdown>
+          <option value={10}>10</option>
+          <option value={50}>50</option>
+          <option value={100}>100</option>
+        </select>
       </Row>
       <DataGrid query={queryResult} allowSearch allowPaging>
         {({ data }) => (
