@@ -10,6 +10,11 @@ import { useLoginQuery, useNavigation, useUserWebsitesQuery, useApi } from '@/co
 import { Favicon } from '@/index';
 import { WebsitesTable, type WebsiteRow } from './WebsitesTable';
 
+interface WebsiteStatsResponse {
+  visitors: number;
+  pageviews: number;
+}
+
 export function WebsitesDataTable({
   userId,
   teamId,
@@ -33,13 +38,14 @@ export function WebsitesDataTable({
   const { renderUrl } = useNavigation();
   const { get } = useApi();
 
-  const websites = queryResult.data?.data || [];
+  const websites: WebsiteRow[] = queryResult.data?.data || [];
 
-  // Fetch stats concurrently for all websites currently rendered on the page
+  // Fetch stats concurrently for all websites currently rendered on the page.
+  // Explicitly typing the Promise ensures 'visitors' and 'pageviews' are recognized.
   const statsQueries = useQueries({
-    queries: websites.map((website: any) => ({
+    queries: websites.map((website) => ({
       queryKey: ['websites:stats', { websiteId: website.id }],
-      queryFn: () => get(`/websites/${website.id}/stats`),
+      queryFn: () => get(`/websites/${website.id}/stats`) as Promise<WebsiteStatsResponse>,
     })),
   });
 
@@ -47,27 +53,25 @@ export function WebsitesDataTable({
 
   // Merge the fetched query states and sort them locally if a metric is targeted
   const sortedData = useMemo(() => {
-    const withStats = websites.map((website: any, index: number) => ({
-      ...website,
-      visitors: statsQueries[index]?.data?.visitors || 0,
-      pageviews: statsQueries[index]?.data?.pageviews || 0,
-    }));
+    const withStats = websites.map((website, index) => {
+      const stats = statsQueries[index]?.data;
+      return {
+        ...website,
+        visitors: stats?.visitors || 0,
+        pageviews: stats?.pageviews || 0,
+      };
+    });
 
     if (localSort.key) {
-      return withStats.sort((a: any, b: any) => {
-        const valA = a[localSort.key];
-        const valB = b[localSort.key];
+      return withStats.sort((a, b) => {
+        const valA = Number(a[localSort.key as keyof typeof a] || 0);
+        const valB = Number(b[localSort.key as keyof typeof b] || 0);
         return localSort.dir === 'desc' ? valB - valA : valA - valB;
       });
     }
+    
     return withStats;
   }, [websites, statsQueries, localSort]);
-
-  // Inject the mapped dataset dynamically back into the query wrapper 
-  const modifiedQueryResult = {
-    ...queryResult,
-    data: queryResult.data ? { ...queryResult.data, data: sortedData } : undefined,
-  };
 
   const handlePageSizeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -112,10 +116,12 @@ export function WebsitesDataTable({
           <option value={100}>100</option>
         </select>
       </Row>
-      <DataGrid query={modifiedQueryResult} allowSearch allowPaging>
-        {({ data }) => (
+      {/* Pass the untouched queryResult to DataGrid to satisfy UseQueryResult typings, 
+          but override the rendered 'data' with our custom sorted array. */}
+      <DataGrid query={queryResult} allowSearch allowPaging>
+        {() => (
           <WebsitesTable
-            data={data}
+            data={sortedData}
             showActions={showActions}
             allowEdit={allowEdit}
             allowView={allowView}
