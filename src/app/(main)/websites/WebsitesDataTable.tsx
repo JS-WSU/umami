@@ -37,9 +37,8 @@ export function WebsitesDataTable({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Parse page limits cleanly from the URL. Avoid storing it in useState to prevent desyncing with Next.js router.
   const urlPageSize = searchParams.get('pageSize');
-  const pageSize = urlPageSize ? Number(urlPageSize) : 50;
+  const pageSize = urlPageSize ? Number(urlPageSize) : 10;
 
   const { user } = useLoginQuery();
   const { renderUrl } = useNavigation();
@@ -48,7 +47,6 @@ export function WebsitesDataTable({
   const { startAt, endAt } = useDateParameters();
   const filters = useFilterParameters();
 
-  // Allow usePagedQuery to inherently extract pageSize and page from the URL via useFilterParameters instead of forcing it.
   const queryResult = useUserWebsitesQuery({
     userId: userId || user?.id,
     teamId,
@@ -65,9 +63,9 @@ export function WebsitesDataTable({
 
   const urlOrderBy = searchParams.get('orderBy');
   
-  // Default sorting to visitors descending if no explicit backend database sort parameter exists in the URL
+  // Set default sorting to popularity (pageviews descending) on initial load
   const [localSort, setLocalSort] = useState<{ key: string; dir: string } | null>(
-    urlOrderBy ? null : { key: 'visitors', dir: 'desc' }
+    urlOrderBy ? null : { key: 'pageviews', dir: 'desc' }
   );
 
   useEffect(() => {
@@ -76,8 +74,11 @@ export function WebsitesDataTable({
     }
   }, [urlOrderBy]);
 
-  const sortedData = useMemo(() => {
-    const withStats = websites.map((website, index) => {
+  // Merge the fetched query states with stats at the React Query level
+  const modifiedQueryResult = useMemo(() => {
+    if (!queryResult.data) return queryResult;
+    
+    const mapped = websites.map((website, index) => {
       const stats = statsQueries[index]?.data;
       return {
         ...website,
@@ -86,16 +87,14 @@ export function WebsitesDataTable({
       };
     });
 
-    if (localSort?.key) {
-      return withStats.sort((a, b) => {
-        const valA = Number(a[localSort.key as keyof typeof a] || 0);
-        const valB = Number(b[localSort.key as keyof typeof b] || 0);
-        return localSort.dir === 'desc' ? valB - valA : valA - valB;
-      });
-    }
-
-    return withStats;
-  }, [websites, statsQueries, localSort]);
+    return {
+      ...queryResult,
+      data: {
+        ...queryResult.data,
+        data: mapped,
+      },
+    };
+  }, [queryResult, websites, statsQueries]);
 
   const handlePageSizeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -146,18 +145,31 @@ export function WebsitesDataTable({
           <option value={100}>100</option>
         </select>
       </Row>
-      <DataGrid query={queryResult} allowSearch allowPaging>
-        {() => (
-          <WebsitesTable
-            data={sortedData}
-            showActions={showActions}
-            allowEdit={allowEdit}
-            allowView={allowView}
-            renderLink={renderLink}
-            localSort={localSort}
-            onMetricSort={handleMetricSort}
-          />
-        )}
+      
+      {/* Pass the enriched queryResult so DataGrid handles pagination on mapped data */}
+      <DataGrid query={modifiedQueryResult as unknown as typeof queryResult} allowSearch allowPaging>
+        {({ data }) => {
+          // 'data' is strictly the paginated subset of enriched websites (e.g., 10 rows)
+          const sortedPageData = localSort?.key
+            ? [...data].sort((a, b) => {
+                const valA = Number(a[localSort.key as keyof typeof a] || 0);
+                const valB = Number(b[localSort.key as keyof typeof b] || 0);
+                return localSort.dir === 'desc' ? valB - valA : valA - valB;
+              })
+            : data;
+
+          return (
+            <WebsitesTable
+              data={sortedPageData}
+              showActions={showActions}
+              allowEdit={allowEdit}
+              allowView={allowView}
+              renderLink={renderLink}
+              localSort={localSort}
+              onMetricSort={handleMetricSort}
+            />
+          );
+        }}
       </DataGrid>
     </>
   );

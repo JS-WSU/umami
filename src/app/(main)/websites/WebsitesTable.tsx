@@ -49,7 +49,6 @@ export function WebsitesTable({
     );
   };
 
-  // Add descriptive indicators to the metric labels to show they reflect the active day limits
   const visitorsLabel = `${t(labels.visitors) || 'Visitors'} (Today)`;
   const pageviewsLabel = `${t(labels.pageviews) || 'Pageviews'} (Today)`;
 
