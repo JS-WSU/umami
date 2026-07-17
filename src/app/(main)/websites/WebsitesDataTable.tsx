@@ -37,8 +37,10 @@ export function WebsitesDataTable({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const urlPageSize = searchParams.get('pageSize');
-  const pageSize = urlPageSize ? Number(urlPageSize) : 10;
+  // Read the limit parameter instead of pageSize to align with Umami's database filters schema
+  const urlLimit = searchParams.get('limit');
+  const limit = urlLimit ? Number(urlLimit) : 10;
+  const page = Number(searchParams.get('page')) || 1;
 
   const { user } = useLoginQuery();
   const { renderUrl } = useNavigation();
@@ -47,10 +49,13 @@ export function WebsitesDataTable({
   const { startAt, endAt } = useDateParameters();
   const filters = useFilterParameters();
 
+  // Explicitly passing 'limit' and 'page' updates the Query Key, triggering correct server pagination
   const queryResult = useUserWebsitesQuery({
     userId: userId || user?.id,
     teamId,
-  });
+    limit,
+    page,
+  } as unknown as { userId?: string; teamId?: string });
 
   const websites: WebsiteRow[] = queryResult.data?.data || [];
 
@@ -96,10 +101,10 @@ export function WebsitesDataTable({
     };
   }, [queryResult, websites, statsQueries]);
 
-  const handlePageSizeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleLimitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const params = new URLSearchParams(searchParams.toString());
-    params.set('pageSize', e.target.value);
-    params.set('page', '1');
+    params.set('limit', e.target.value);
+    params.set('page', '1'); // Reset page when layout limit changes
     router.push(`${pathname}?${params.toString()}`);
   };
 
@@ -130,8 +135,8 @@ export function WebsitesDataTable({
       <Row justifyContent="end" paddingBottom="4" gap="2" alignItems="center">
         <Text>Show:</Text>
         <select
-          value={pageSize}
-          onChange={handlePageSizeChange}
+          value={limit}
+          onChange={handleLimitChange}
           style={{
             padding: '4px 8px',
             borderRadius: '4px',
@@ -149,7 +154,7 @@ export function WebsitesDataTable({
       {/* Pass the enriched queryResult so DataGrid handles pagination on mapped data */}
       <DataGrid query={modifiedQueryResult as unknown as typeof queryResult} allowSearch allowPaging>
         {({ data }) => {
-          // 'data' is strictly the paginated subset of enriched websites (e.g., 10 rows)
+          // 'data' is now strictly paginated (e.g., 10 rows maximum)
           const sortedPageData = localSort?.key
             ? [...data].sort((a, b) => {
                 const valA = Number(a[localSort.key as keyof typeof a] || 0);
