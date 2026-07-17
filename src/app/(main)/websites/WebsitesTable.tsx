@@ -4,7 +4,6 @@ import { DateDistance } from '@/components/common/DateDistance';
 import { LinkButton } from '@/components/common/LinkButton';
 import { SortableLabel } from '@/components/common/SortableLabel';
 import { useMessages, useNavigation } from '@/components/hooks';
-import { useWebsiteStatsQuery } from '@/components/hooks/queries/useWebsiteStatsQuery';
 import { SquarePen } from '@/components/icons';
 
 export interface WebsiteRow {
@@ -12,6 +11,8 @@ export interface WebsiteRow {
   name: string;
   domain: string;
   createdAt: string | Date;
+  visitors?: number;
+  pageviews?: number;
 }
 
 export interface WebsitesTableProps extends DataTableProps {
@@ -19,25 +20,34 @@ export interface WebsitesTableProps extends DataTableProps {
   allowEdit?: boolean;
   allowView?: boolean;
   renderLink?: (row: WebsiteRow) => ReactNode;
+  localSort?: { key: string; dir: string };
+  onMetricSort?: (key: string) => void;
 }
 
-function MetricCell({ websiteId, metric }: { websiteId: string; metric: 'pageviews' | 'visitors' }) {
-  const { data, isLoading, error } = useWebsiteStatsQuery({ websiteId });
-
-  if (isLoading) {
-    return <Text color="muted">...</Text>;
-  }
-
-  if (error) {
-    return <Text color="muted">-</Text>;
-  }
-
-  return <Text>{data?.[metric]?.toLocaleString() || 0}</Text>;
-}
-
-export function WebsitesTable({ showActions, renderLink, ...props }: WebsitesTableProps) {
+export function WebsitesTable({
+  showActions,
+  renderLink,
+  localSort,
+  onMetricSort,
+  ...props
+}: WebsitesTableProps) {
   const { t, labels } = useMessages();
   const { renderUrl } = useNavigation();
+
+  const renderSortableMetricHeader = (label: string, key: string) => {
+    const isSorted = localSort?.key === key;
+    return (
+      <div
+        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+        onClick={() => onMetricSort?.(key)}
+      >
+        {label}
+        {isSorted && (
+          <span style={{ fontSize: '0.8em' }}>{localSort.dir === 'desc' ? '▼' : '▲'}</span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <DataTable {...props}>
@@ -45,11 +55,17 @@ export function WebsitesTable({ showActions, renderLink, ...props }: WebsitesTab
         {(row: WebsiteRow) => (renderLink ? renderLink(row) : null)}
       </DataColumn>
       <DataColumn id="domain" label={<SortableLabel label={t(labels.domain)} sortKey="domain" />} />
-      <DataColumn id="visitors" label={<SortableLabel label={t(labels.visitors) || 'Visitors'} sortKey="visitors" />}>
-        {(row: WebsiteRow) => <MetricCell websiteId={row.id} metric="visitors" />}
+      <DataColumn
+        id="visitors"
+        label={renderSortableMetricHeader(t(labels.visitors) || 'Visitors', 'visitors')}
+      >
+        {(row: WebsiteRow) => <Text>{row.visitors?.toLocaleString() || 0}</Text>}
       </DataColumn>
-      <DataColumn id="pageviews" label={<SortableLabel label={t(labels.pageviews) || 'Pageviews'} sortKey="pageviews" />}>
-        {(row: WebsiteRow) => <MetricCell websiteId={row.id} metric="pageviews" />}
+      <DataColumn
+        id="pageviews"
+        label={renderSortableMetricHeader(t(labels.pageviews) || 'Pageviews', 'pageviews')}
+      >
+        {(row: WebsiteRow) => <Text>{row.pageviews?.toLocaleString() || 0}</Text>}
       </DataColumn>
       <DataColumn
         id="created"
