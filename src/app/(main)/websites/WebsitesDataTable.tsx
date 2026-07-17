@@ -20,6 +20,82 @@ interface WebsiteStatsResponse {
   totaltime: number;
 }
 
+// Sub-component to safely isolate metrics fetching and client-side sorting 
+// exclusively to the active paginated chunk returned by DataGrid.
+function EnrichedWebsitesTable({ data = [], ...props }: any) {
+  const { get } = useApi();
+  const { startAt, endAt } = useDateParameters();
+  const filters = useFilterParameters();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const urlOrderBy = searchParams.get('orderBy');
+  
+  // Set default sorting to popularity (pageviews descending) on initial load
+  const [localSort, setLocalSort] = useState<{ key: string; dir: string } | null>(
+    urlOrderBy ? null : { key: 'pageviews', dir: 'desc' }
+  );
+
+  useEffect(() => {
+    if (urlOrderBy) {
+      setLocalSort(null);
+    }
+  }, [urlOrderBy]);
+
+  // Fetch stats concurrently strictly for the active page slice
+  const statsQueries = useQueries({
+    queries: data.map((website: any) => ({
+      queryKey: ['websites:stats', { websiteId: website.id, startAt, endAt, ...filters }],
+      queryFn: () => get(`/websites/${website.id}/stats`, { startAt, endAt, ...filters }) as Promise<WebsiteStatsResponse>,
+    })),
+  });
+
+  const sortedPageData = useMemo(() => {
+    const enriched = data.map((website: any, index: number) => {
+      const stats = statsQueries[index]?.data;
+      return {
+        ...website,
+        visitors: stats?.visitors || 0,
+        pageviews: stats?.pageviews || 0,
+      };
+    });
+
+    if (localSort?.key) {
+      return enriched.sort((a: any, b: any) => {
+        const valA = Number(a[localSort.key] || 0);
+        const valB = Number(b[localSort.key] || 0);
+        return localSort.dir === 'desc' ? valB - valA : valA - valB;
+      });
+    }
+
+    return enriched;
+  }, [data, statsQueries, localSort]);
+
+  const handleMetricSort = (key: string) => {
+    setLocalSort((prev) => ({
+      key,
+      dir: prev?.key === key && prev.dir === 'desc' ? 'asc' : 'desc',
+    }));
+    
+    // De-sync backend sort if previously established
+    const params = new URLSearchParams(searchParams.toString());
+    if (params.has('orderBy')) {
+      params.delete('orderBy');
+      router.push(`${pathname}?${params.toString()}`);
+    }
+  };
+
+  return (
+    <WebsitesTable
+      {...props}
+      data={sortedPageData}
+      localSort={localSort}
+      onMetricSort={handleMetricSort}
+    />
+  );
+}
+
 export function WebsitesDataTable({
   userId,
   teamId,
@@ -37,88 +113,24 @@ export function WebsitesDataTable({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Read the limit parameter instead of pageSize to align with Umami's database filters schema
-  const urlLimit = searchParams.get('limit');
-  const limit = urlLimit ? Number(urlLimit) : 10;
-  const page = Number(searchParams.get('page')) || 1;
+  // Read pageSize cleanly from the URL 
+  const urlPageSize = searchParams.get('pageSize');
+  const pageSize = urlPageSize ? Number(urlPageSize) : 10;
 
   const { user } = useLoginQuery();
   const { renderUrl } = useNavigation();
-  const { get } = useApi();
-  
-  const { startAt, endAt } = useDateParameters();
-  const filters = useFilterParameters();
 
-  // Explicitly passing 'limit' and 'page' updates the Query Key, triggering correct server pagination
+  // Let usePagedQuery inherently extract pageSize and page from the URL. Do not force params.
   const queryResult = useUserWebsitesQuery({
     userId: userId || user?.id,
     teamId,
-    limit,
-    page,
-  } as unknown as { userId?: string; teamId?: string });
-
-  const websites: WebsiteRow[] = queryResult.data?.data || [];
-
-  const statsQueries = useQueries({
-    queries: websites.map((website) => ({
-      queryKey: ['websites:stats', { websiteId: website.id, startAt, endAt, ...filters }],
-      queryFn: () => get(`/websites/${website.id}/stats`, { startAt, endAt, ...filters }) as Promise<WebsiteStatsResponse>,
-    })),
   });
 
-  const urlOrderBy = searchParams.get('orderBy');
-  
-  // Set default sorting to popularity (pageviews descending) on initial load
-  const [localSort, setLocalSort] = useState<{ key: string; dir: string } | null>(
-    urlOrderBy ? null : { key: 'pageviews', dir: 'desc' }
-  );
-
-  useEffect(() => {
-    if (urlOrderBy) {
-      setLocalSort(null);
-    }
-  }, [urlOrderBy]);
-
-  // Merge the fetched query states with stats at the React Query level
-  const modifiedQueryResult = useMemo(() => {
-    if (!queryResult.data) return queryResult;
-    
-    const mapped = websites.map((website, index) => {
-      const stats = statsQueries[index]?.data;
-      return {
-        ...website,
-        visitors: stats?.visitors || 0,
-        pageviews: stats?.pageviews || 0,
-      };
-    });
-
-    return {
-      ...queryResult,
-      data: {
-        ...queryResult.data,
-        data: mapped,
-      },
-    };
-  }, [queryResult, websites, statsQueries]);
-
-  const handleLimitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handlePageSizeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const params = new URLSearchParams(searchParams.toString());
-    params.set('limit', e.target.value);
-    params.set('page', '1'); // Reset page when layout limit changes
+    params.set('pageSize', e.target.value); // Use 'pageSize' precisely as the backend expects
+    params.set('page', '1'); // Reset to the first page when limits change
     router.push(`${pathname}?${params.toString()}`);
-  };
-
-  const handleMetricSort = (key: string) => {
-    setLocalSort((prev) => ({
-      key,
-      dir: prev?.key === key && prev.dir === 'desc' ? 'asc' : 'desc',
-    }));
-    
-    const params = new URLSearchParams(searchParams.toString());
-    if (params.has('orderBy')) {
-      params.delete('orderBy');
-      router.push(`${pathname}?${params.toString()}`);
-    }
   };
 
   const renderLink = (row: WebsiteRow) => (
@@ -135,8 +147,8 @@ export function WebsitesDataTable({
       <Row justifyContent="end" paddingBottom="4" gap="2" alignItems="center">
         <Text>Show:</Text>
         <select
-          value={limit}
-          onChange={handleLimitChange}
+          value={pageSize}
+          onChange={handlePageSizeChange}
           style={{
             padding: '4px 8px',
             borderRadius: '4px',
@@ -151,30 +163,17 @@ export function WebsitesDataTable({
         </select>
       </Row>
       
-      {/* Pass the enriched queryResult so DataGrid handles pagination on mapped data */}
-      <DataGrid query={modifiedQueryResult as unknown as typeof queryResult} allowSearch allowPaging>
-        {({ data }) => {
-          // 'data' is now strictly paginated (e.g., 10 rows maximum)
-          const sortedPageData = localSort?.key
-            ? [...data].sort((a, b) => {
-                const valA = Number(a[localSort.key as keyof typeof a] || 0);
-                const valB = Number(b[localSort.key as keyof typeof b] || 0);
-                return localSort.dir === 'desc' ? valB - valA : valA - valB;
-              })
-            : data;
-
-          return (
-            <WebsitesTable
-              data={sortedPageData}
-              showActions={showActions}
-              allowEdit={allowEdit}
-              allowView={allowView}
-              renderLink={renderLink}
-              localSort={localSort}
-              onMetricSort={handleMetricSort}
-            />
-          );
-        }}
+      {/* Pass untouched queryResult to DataGrid to perfectly preserve internal pagination mappings */}
+      <DataGrid query={queryResult} allowSearch allowPaging>
+        {({ data }) => (
+          <EnrichedWebsitesTable
+            data={data}
+            showActions={showActions}
+            allowEdit={allowEdit}
+            allowView={allowView}
+            renderLink={renderLink}
+          />
+        )}
       </DataGrid>
     </>
   );
