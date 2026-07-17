@@ -49,6 +49,10 @@ export function WebsitesTable({
     );
   };
 
+  // Add descriptive indicators to the metric labels to show they reflect the active day limits
+  const visitorsLabel = `${t(labels.visitors) || 'Visitors'} (Today)`;
+  const pageviewsLabel = `${t(labels.pageviews) || 'Pageviews'} (Today)`;
+
   return (
     <DataTable {...props}>
       <DataColumn id="name" label={<SortableLabel label={t(labels.name)} sortKey="name" />}>
@@ -57,13 +61,13 @@ export function WebsitesTable({
       <DataColumn id="domain" label={<SortableLabel label={t(labels.domain)} sortKey="domain" />} />
       <DataColumn
         id="visitors"
-        label={renderSortableMetricHeader(t(labels.visitors) || 'Visitors', 'visitors')}
+        label={renderSortableMetricHeader(visitorsLabel, 'visitors')}
       >
         {(row: WebsiteRow) => <Text>{row.visitors?.toLocaleString() || 0}</Text>}
       </DataColumn>
       <DataColumn
         id="pageviews"
-        label={renderSortableMetricHeader(t(labels.pageviews) || 'Pageviews', 'pageviews')}
+        label={renderSortableMetricHeader(pageviewsLabel, 'pageviews')}
       >
         {(row: WebsiteRow) => <Text>{row.pageviews?.toLocaleString() || 0}</Text>}
       </DataColumn>

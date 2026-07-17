@@ -37,27 +37,25 @@ export function WebsitesDataTable({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Parse page limits cleanly from the URL 
+  // Parse page limits cleanly from the URL. Avoid storing it in useState to prevent desyncing with Next.js router.
   const urlPageSize = searchParams.get('pageSize');
-  const [pageSize, setPageSize] = useState<number>(urlPageSize ? Number(urlPageSize) : 50);
+  const pageSize = urlPageSize ? Number(urlPageSize) : 50;
 
   const { user } = useLoginQuery();
   const { renderUrl } = useNavigation();
   const { get } = useApi();
   
-  // Necessary hooks to calculate the appropriate dates, avoiding zeros.
   const { startAt, endAt } = useDateParameters();
   const filters = useFilterParameters();
 
+  // Allow usePagedQuery to inherently extract pageSize and page from the URL via useFilterParameters instead of forcing it.
   const queryResult = useUserWebsitesQuery({
     userId: userId || user?.id,
     teamId,
-    pageSize,
-  } as unknown as { userId?: string; teamId?: string });
+  });
 
   const websites: WebsiteRow[] = queryResult.data?.data || [];
 
-  // Fetch stats concurrently ensuring accurate payload requirements are met
   const statsQueries = useQueries({
     queries: websites.map((website) => ({
       queryKey: ['websites:stats', { websiteId: website.id, startAt, endAt, ...filters }],
@@ -65,11 +63,13 @@ export function WebsitesDataTable({
     })),
   });
 
-  // Local Sort configuration mapping
-  const [localSort, setLocalSort] = useState<{ key: string; dir: string } | null>(null);
   const urlOrderBy = searchParams.get('orderBy');
+  
+  // Default sorting to visitors descending if no explicit backend database sort parameter exists in the URL
+  const [localSort, setLocalSort] = useState<{ key: string; dir: string } | null>(
+    urlOrderBy ? null : { key: 'visitors', dir: 'desc' }
+  );
 
-  // Strip local sort priorities whenever the user falls back onto a standard database sort column
   useEffect(() => {
     if (urlOrderBy) {
       setLocalSort(null);
@@ -86,7 +86,6 @@ export function WebsitesDataTable({
       };
     });
 
-    // If metric sorting is active, hijack the mapping array
     if (localSort?.key) {
       return withStats.sort((a, b) => {
         const valA = Number(a[localSort.key as keyof typeof a] || 0);
@@ -95,15 +94,12 @@ export function WebsitesDataTable({
       });
     }
 
-    // Default to the original order supplied by the backend table sort
     return withStats;
   }, [websites, statsQueries, localSort]);
 
   const handlePageSizeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newSize = Number(e.target.value);
-    setPageSize(newSize);
     const params = new URLSearchParams(searchParams.toString());
-    params.set('pageSize', newSize.toString());
+    params.set('pageSize', e.target.value);
     params.set('page', '1');
     router.push(`${pathname}?${params.toString()}`);
   };
@@ -114,7 +110,6 @@ export function WebsitesDataTable({
       dir: prev?.key === key && prev.dir === 'desc' ? 'asc' : 'desc',
     }));
     
-    // De-sync backend sort if it was previously established
     const params = new URLSearchParams(searchParams.toString());
     if (params.has('orderBy')) {
       params.delete('orderBy');
