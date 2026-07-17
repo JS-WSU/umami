@@ -20,7 +20,7 @@ export interface WebsitesTableProps extends DataTableProps {
   allowEdit?: boolean;
   allowView?: boolean;
   renderLink?: (row: WebsiteRow) => ReactNode;
-  localSort?: { key: string; dir: string };
+  localSort?: { key: string; dir: string } | null;
   onMetricSort?: (key: string) => void;
 }
 
@@ -38,7 +38,7 @@ export function WebsitesTable({
     const isSorted = localSort?.key === key;
     return (
       <div
-        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', userSelect: 'none' }}
         onClick={() => onMetricSort?.(key)}
       >
         {label}
