@@ -73,24 +73,15 @@ export function BoardProvider({
   const searchParams = useSearchParams();
 
   const [board, setBoard] = useState<Partial<Board>>(data ?? createDefaultBoard());
-  const [isHydrating, setIsHydrating] = useState(false);
   const boardRef = useRef<Partial<Board>>(data ?? createDefaultBoard());
   const layoutGetterRef = useRef<LayoutGetter | null>(null);
   const appliedFiltersRef = useRef<string | null>(null);
-
-  // Capture the original searchParams on first mount before any child components
-  // can aggressively inject their default fallbacks.
-  const initialParamsRef = useRef<URLSearchParams | null>(null);
-  if (initialParamsRef.current === null && searchParams !== null) {
-    initialParamsRef.current = new URLSearchParams(searchParams.toString());
-  }
 
   const registerLayoutGetter = useCallback((getter: LayoutGetter) => {
     layoutGetterRef.current = getter;
   }, []);
 
-  // 1. Independent effect for initializing standard Board data.
-  // We omit searchParams here to ensure URL modifications don't reset unsaved board edits.
+  // 1. Initialize board state from server data (ignoring URL changes)
   useEffect(() => {
     if (data) {
       const nextBoard = {
@@ -104,39 +95,37 @@ export function BoardProvider({
     }
   }, [data]);
 
-  // 2. Hydration effect for applying saved view filters from the server.
-  // Blocks children rendering until the router finishes updating the URL.
-  useEffect(() => {
-    if (data && appliedFiltersRef.current !== data.id) {
-      const typedParams = data.parameters as BoardParameters & {
-        defaultFilters?: Record<string, string>;
-      };
+  // 2. Compute hydration logic during render to block child components from injecting defaults
+  const currentParams = searchParams ? new URLSearchParams(searchParams.toString()) : new URLSearchParams();
+  let needsHydration = false;
+  const hydratedParams = new URLSearchParams(currentParams.toString());
 
-      appliedFiltersRef.current = data.id;
-
-      let hasChanges = false;
-      const currentParams = new URLSearchParams(searchParams?.toString() || '');
-
-      if (typedParams?.defaultFilters) {
-        Object.entries(typedParams.defaultFilters).forEach(([key, value]) => {
-          // Only apply if the user didn't intentionally arrive with this param already
-          if (!initialParamsRef.current?.has(key)) {
-            currentParams.set(key, String(value));
-            hasChanges = true;
-          }
-        });
-      }
-
-      if (hasChanges) {
-        setIsHydrating(true);
-        const path = pathname ? `${pathname}?${currentParams.toString()}` : `?${currentParams.toString()}`;
-        router.replace(path, { scroll: false });
-      }
-    } else if (isHydrating) {
-      // Once searchParams update successfully, this effect fires again and we can unblock rendering
-      setIsHydrating(false);
+  if (data && appliedFiltersRef.current !== data.id) {
+    const typedParams = data.parameters as BoardParameters & { defaultFilters?: Record<string, string> };
+    
+    if (typedParams?.defaultFilters) {
+      Object.entries(typedParams.defaultFilters).forEach(([key, value]) => {
+        // If the URL lacks the saved filter, we must hydrate it
+        if (!currentParams.has(key)) {
+          hydratedParams.set(key, String(value));
+          needsHydration = true;
+        }
+      });
     }
-  }, [data, router, pathname, searchParams, isHydrating]);
+  }
+
+  const hydratedParamsString = hydratedParams.toString();
+
+  useEffect(() => {
+    if (needsHydration) {
+      // Do not mark as applied yet; wait for Next.js to update the URL and trigger a re-render
+      const path = pathname ? `${pathname}?${hydratedParamsString}` : `?${hydratedParamsString}`;
+      router.replace(path, { scroll: false });
+    } else if (data && appliedFiltersRef.current !== data.id) {
+      // Hydration is complete or wasn't needed, mark as applied so we don't repeat
+      appliedFiltersRef.current = data.id;
+    }
+  }, [needsHydration, hydratedParamsString, data, pathname, router]);
 
   const { mutateAsync, isPending } = useMutation({
     mutationFn: (boardData: Partial<Board>) => {
@@ -165,10 +154,9 @@ export function BoardProvider({
     const currentBoard = boardRef.current;
     const defaultName = t(labels.untitled);
 
-    // Get current layout sizes from BoardEditBody if registered
     const layoutData = layoutGetterRef.current?.();
 
-    // Extract current view filters
+    // Extract current view filters comprehensively 
     const defaultFilters: Record<string, string> = {};
     const filterKeys = [
       'dateRange', 'startAt', 'endAt', 'segment', 
@@ -219,8 +207,9 @@ export function BoardProvider({
     return result;
   }, [mutateAsync, toast, t, labels.untitled, messages.saved, touch, router, renderUrl, searchParams]);
 
-  // Keep Loading active if we are intentionally hydrating the URL
-  if ((boardId && isFetching && isLoading) || isHydrating) {
+  // Block rendering of child components if fetching data or if we are actively hydrating the URL. 
+  // This physically prevents DatePicker from injecting default fallbacks prematurely.
+  if ((boardId && isFetching && isLoading) || needsHydration) {
     return <Loading placement="absolute" />;
   }
 
