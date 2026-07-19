@@ -25,7 +25,7 @@ export function BoardShareCreateForm({
   const { touch } = useModified();
   const { t, labels, getErrorMessage } = useMessages();
   const [isPending, setIsPending] = useState(false);
-  const [error, setError] = useState<unknown>(null);
+  const [error, setError] = useState<Error | string | null>(null);
 
   const handleSubmit = async (data: { name: string; allowFilter?: boolean; theme?: string }) => {
     setIsPending(true);
@@ -43,7 +43,7 @@ export function BoardShareCreateForm({
       touch('shares');
       onSave?.();
     } catch (e) {
-      setError(e);
+      setError(e instanceof Error ? e : String(e));
     } finally {
       setIsPending(false);
     }

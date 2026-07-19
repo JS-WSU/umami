@@ -77,6 +77,13 @@ export function BoardProvider({
   const layoutGetterRef = useRef<LayoutGetter | null>(null);
   const appliedFiltersRef = useRef<string | null>(null);
 
+  // Capture the original searchParams on first mount before any child components
+  // like DatePicker can inject their default (e.g., 24h) into the URL.
+  const initialParamsRef = useRef<URLSearchParams | null>(null);
+  if (initialParamsRef.current === null && searchParams !== null) {
+    initialParamsRef.current = new URLSearchParams(searchParams.toString());
+  }
+
   const registerLayoutGetter = useCallback((getter: LayoutGetter) => {
     layoutGetterRef.current = getter;
   }, []);
@@ -96,14 +103,15 @@ export function BoardProvider({
         defaultFilters?: Record<string, string>;
       };
 
-      // Apply saved default filters if viewing and filters aren't already in the URL
+      // Apply saved default filters if viewing and filters weren't originally in the URL
       if (typedParams?.defaultFilters && appliedFiltersRef.current !== data.id) {
         appliedFiltersRef.current = data.id;
         const currentParams = new URLSearchParams(searchParams?.toString() || '');
         let hasChanges = false;
 
         Object.entries(typedParams.defaultFilters).forEach(([key, value]) => {
-          if (!currentParams.has(key)) {
+          // Only apply the saved filter if the user didn't explicitly load the page with this filter
+          if (!initialParamsRef.current?.has(key)) {
             currentParams.set(key, String(value));
             hasChanges = true;
           }
@@ -151,6 +159,7 @@ export function BoardProvider({
     const filterKeys = [
       'dateRange', 'startAt', 'endAt', 'segment', 
       'compare', 'compareStartAt', 'compareEndAt', 'compareDateRange',
+      'startDate', 'endDate', 'range', 'start', 'end', 
       'browser', 'os', 'device', 'screen', 'language', 'country', 'region', 'city',
       'url', 'referrer', 'title', 'host', 'event',
       'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'
