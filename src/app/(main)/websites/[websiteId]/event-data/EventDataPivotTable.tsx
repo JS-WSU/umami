@@ -16,6 +16,14 @@ import {
 } from '@/components/hooks';
 import type { EventPropertyFilter } from '@/lib/types';
 
+interface PivotTableRow {
+  eventId: string;
+  sessionId: string;
+  urlPath: string;
+  createdAt: string;
+  [key: string]: string | undefined;
+}
+
 export function EventDataPivotTable({
   websiteId,
   eventName,
@@ -56,7 +64,7 @@ export function EventDataPivotTable({
         propertyKeys: string[];
         propertyValues: string[];
       }) => {
-        const flat: Record<string, any> = {
+        const flat: PivotTableRow = {
           eventId: row.eventId,
           sessionId: row.sessionId,
           urlPath: row.urlPath,
@@ -102,22 +110,22 @@ export function EventDataPivotTable({
           {isMobile ? (
             <DataTable data={tableQuery?.data} style={{ width: '100%' }} displayMode="cards">
               <DataColumn id="session" label={t(labels.session)} width="72px">
-                {(row: any) => (
+                {(row: PivotTableRow) => (
                   <Link href={updateParams({ session: row.sessionId })}>
                     <Avatar seed={row.sessionId} size={32} />
                   </Link>
                 )}
               </DataColumn>
               <DataColumn id="urlPath" label={t(labels.path)} width="220px">
-                {(row: any) => renderTruncatedText(row.urlPath ?? '')}
+                {(row: PivotTableRow) => renderTruncatedText(row.urlPath ?? '')}
               </DataColumn>
               {propertyKeys.map(key => (
                 <DataColumn key={key} id={key} label={key} width="160px">
-                  {(row: any) => renderTruncatedText(row[key] ?? '')}
+                  {(row: PivotTableRow) => renderTruncatedText(row[key] ?? '')}
                 </DataColumn>
               ))}
               <DataColumn id="createdAt" label={t(labels.created)} width="180px">
-                {(row: any) => <DateDistance date={new Date(row.createdAt)} />}
+                {(row: PivotTableRow) => <DateDistance date={new Date(row.createdAt)} />}
               </DataColumn>
             </DataTable>
           ) : (
@@ -127,22 +135,22 @@ export function EventDataPivotTable({
               <div style={{ width: tableMinWidth, minWidth: tableMinWidth }}>
                 <DataTable data={tableQuery?.data} style={{ width: '100%' }} displayMode="table">
                   <DataColumn id="session" label={t(labels.session)} width="72px">
-                    {(row: any) => (
+                    {(row: PivotTableRow) => (
                       <Link href={updateParams({ session: row.sessionId })}>
                         <Avatar seed={row.sessionId} size={32} />
                       </Link>
                     )}
                   </DataColumn>
                   <DataColumn id="urlPath" label={t(labels.path)} width="220px">
-                    {(row: any) => renderTruncatedText(row.urlPath ?? '')}
+                    {(row: PivotTableRow) => renderTruncatedText(row.urlPath ?? '')}
                   </DataColumn>
                   {propertyKeys.map(key => (
                     <DataColumn key={key} id={key} label={key} width="160px">
-                      {(row: any) => renderTruncatedText(row[key] ?? '')}
+                      {(row: PivotTableRow) => renderTruncatedText(row[key] ?? '')}
                     </DataColumn>
                   ))}
                   <DataColumn id="createdAt" label={t(labels.created)} width="180px">
-                    {(row: any) => <DateDistance date={new Date(row.createdAt)} />}
+                    {(row: PivotTableRow) => <DateDistance date={new Date(row.createdAt)} />}
                   </DataColumn>
                 </DataTable>
               </div>

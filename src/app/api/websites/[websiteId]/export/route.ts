@@ -59,7 +59,7 @@ export async function GET(
     return sanitized;
   };
 
-  const parse = (data: any) => {
+  const parse = (data: Record<string, unknown>[]) => {
     const sanitized = Array.isArray(data) ? data.map(sanitizeRow) : data;
     return Papa.unparse(sanitized, {
       header: true,
@@ -67,13 +67,13 @@ export async function GET(
     });
   };
 
-  zip.file('events.csv', parse(events));
-  zip.file('pages.csv', parse(pages));
-  zip.file('referrers.csv', parse(referrers));
-  zip.file('browsers.csv', parse(browsers));
-  zip.file('os.csv', parse(os));
-  zip.file('devices.csv', parse(devices));
-  zip.file('countries.csv', parse(countries));
+  zip.file('events.csv', parse(events as Record<string, unknown>[]));
+  zip.file('pages.csv', parse(pages as Record<string, unknown>[]));
+  zip.file('referrers.csv', parse(referrers as Record<string, unknown>[]));
+  zip.file('browsers.csv', parse(browsers as Record<string, unknown>[]));
+  zip.file('os.csv', parse(os as Record<string, unknown>[]));
+  zip.file('devices.csv', parse(devices as Record<string, unknown>[]));
+  zip.file('countries.csv', parse(countries as Record<string, unknown>[]));
 
   const content = await zip.generateAsync({ type: 'nodebuffer' });
   const base64 = content.toString('base64');

@@ -15,6 +15,8 @@ export async function GET(
     event: z.string(),
     propertyName: z.string(),
     dataType: z.coerce.number().int().optional(),
+    unit: z.string().optional(),
+    timezone: z.string().optional(),
     ...filterParams,
   });
 
@@ -30,13 +32,15 @@ export async function GET(
     return unauthorized();
   }
 
-  const { event: eventName, propertyName, dataType } = query;
+  const { event: eventName, propertyName, dataType, unit, timezone } = query;
   const filters = await getQueryFilters(query, websiteId);
 
   const data = await getEventDataValues(websiteId, eventName, {
     ...filters,
     propertyName,
     dataType,
+    unit,
+    timezone,
   });
 
   return json(data);

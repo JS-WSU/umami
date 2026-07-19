@@ -6,17 +6,21 @@ import type { QueryFilters } from '@/lib/types';
 
 const FUNCTION_NAME = 'getEventDataValues';
 
-interface WebsiteEventData {
+export interface WebsiteEventData {
   value: string;
   total: number;
+  date?: string;
 }
 
+export type EventDataFilters = QueryFilters & {
+  propertyName?: string;
+  dataType?: number;
+  unit?: string;
+  timezone?: string;
+};
+
 export async function getEventDataValues(
-  ...args: [
-    websiteId: string,
-    eventName: string,
-    filters: QueryFilters & { propertyName?: string; dataType?: number },
-  ]
+  ...args: [websiteId: string, eventName: string, filters: EventDataFilters]
 ): Promise<WebsiteEventData[]> {
   return runQuery({
     [PRISMA]: () => relationalQuery(...args),
@@ -27,19 +31,24 @@ export async function getEventDataValues(
 async function relationalQuery(
   websiteId: string,
   eventName: string,
-  filters: QueryFilters & { propertyName?: string; dataType?: number },
+  filters: EventDataFilters,
 ) {
   const { rawQuery, parseFilters, getDateSQL } = prisma;
-  const { dataType } = filters;
+  const { dataType, unit, timezone } = filters;
   const { filterQuery, joinSessionQuery, cohortQuery, queryParams } = parseFilters({
     ...filters,
     websiteId,
   });
 
+  const selectDate = unit ? `${getDateSQL('event_data.created_at', unit, timezone)} as "date",` : '';
+  const groupDate = unit ? '"date", ' : '';
+  const orderDate = unit ? '"date" asc, ' : '';
+
   if (dataType === DATA_TYPE.array) {
     return rawQuery(
       `
       select
+        ${selectDate}
         array_item.value as "value",
         count(*) as "total"
       from event_data
@@ -56,8 +65,8 @@ async function relationalQuery(
         and event_data.data_key = {{propertyName}}
         and event_data.data_type = ${DATA_TYPE.array}
       ${filterQuery}
-      group by array_item.value
-      order by 2 desc
+      group by ${groupDate}array_item.value
+      order by ${orderDate}2 desc
       limit 100
       `,
       { ...queryParams, eventName },
@@ -68,6 +77,7 @@ async function relationalQuery(
   return rawQuery(
     `
     select
+      ${selectDate}
       case
         when data_type = 2 then replace(string_value, '.0000', '')
         when data_type = 4 then ${getDateSQL('date_value', 'hour')}
@@ -87,8 +97,8 @@ async function relationalQuery(
       and event_data.data_key = {{propertyName}}
       ${dataType ? `and event_data.data_type = ${dataType}` : ''}
     ${filterQuery}
-    group by value
-    order by 2 desc
+    group by ${groupDate}value
+    order by ${orderDate}2 desc
     limit 100
     `,
     { ...queryParams, eventName },
@@ -99,16 +109,23 @@ async function relationalQuery(
 async function clickhouseQuery(
   websiteId: string,
   eventName: string,
-  filters: QueryFilters & { propertyName?: string; dataType?: number },
-): Promise<{ value: string; total: number }[]> {
-  const { rawQuery, parseFilters } = clickhouse;
-  const { dataType } = filters;
+  filters: EventDataFilters,
+): Promise<WebsiteEventData[]> {
+  const { rawQuery, parseFilters, getDateStringQuery } = clickhouse;
+  const { dataType, unit, timezone } = filters;
   const { filterQuery, cohortQuery, queryParams } = parseFilters({ ...filters, websiteId });
+
+  const selectDate = unit
+    ? `${getDateStringQuery('event_data.created_at', unit, timezone)} as "date",`
+    : '';
+  const groupDate = unit ? 'date, ' : '';
+  const orderDate = unit ? 'date asc, ' : '';
 
   if (dataType === DATA_TYPE.array) {
     return rawQuery(
       `
       select
+        ${selectDate}
         arrayJoin(JSONExtract(ifNull(event_data.string_value, '[]'), 'Array(String)')) as "value",
         count(*) as "total"
       from event_data
@@ -129,8 +146,8 @@ async function clickhouseQuery(
         and event_data.data_key = {propertyName:String}
         and event_data.data_type = ${DATA_TYPE.array}
       ${filterQuery}
-      group by value
-      order by 2 desc
+      group by ${groupDate}value
+      order by ${orderDate}2 desc
       limit 100
       `,
       { ...queryParams, eventName },
@@ -141,6 +158,7 @@ async function clickhouseQuery(
   return rawQuery(
     `
     select
+      ${selectDate}
       multiIf(data_type = 2, replaceAll(string_value, '.0000', ''),
               data_type = 4, toString(date_trunc('hour', date_value)),
               string_value) as "value",
@@ -163,8 +181,8 @@ async function clickhouseQuery(
       and event_data.data_key = {propertyName:String}
       ${dataType ? `and event_data.data_type = ${dataType}` : ''}
     ${filterQuery}
-    group by value
-    order by 2 desc
+    group by ${groupDate}value
+    order by ${orderDate}2 desc
     limit 100
     `,
     { ...queryParams, eventName },
