@@ -25,7 +25,7 @@ export function BoardShareCreateForm({
   const { touch } = useModified();
   const { t, labels, getErrorMessage } = useMessages();
   const [isPending, setIsPending] = useState(false);
-  const [error, setError] = useState<any>(null);
+  const [error, setError] = useState<unknown>(null);
 
   const handleSubmit = async (data: { name: string; allowFilter?: boolean; theme?: string }) => {
     setIsPending(true);

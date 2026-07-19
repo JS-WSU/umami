@@ -2,6 +2,7 @@
 import { Loading, useToast } from '@umami/react-zen';
 import { createContext, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { v4 as uuid } from 'uuid';
+import { useSearchParams } from 'next/navigation';
 import { useApi, useMessages, useModified, useNavigation } from '@/components/hooks';
 import { useBoardQuery } from '@/components/hooks/queries/useBoardQuery';
 import { BOARD_TYPES, getBoardType } from '@/lib/boards';
@@ -19,7 +20,7 @@ export interface BoardContextValue {
   registerLayoutGetter: (getter: LayoutGetter) => void;
 }
 
-export const BoardContext = createContext<BoardContextValue>(null);
+export const BoardContext = createContext<BoardContextValue | null>(null);
 
 const createDefaultBoard = (): Partial<Board> => ({
   type: BOARD_TYPES.mixed,
@@ -68,10 +69,12 @@ export function BoardProvider({
   const { toast } = useToast();
   const { t, labels, messages } = useMessages();
   const { router, renderUrl, teamId } = useNavigation();
+  const searchParams = useSearchParams();
 
   const [board, setBoard] = useState<Partial<Board>>(data ?? createDefaultBoard());
   const boardRef = useRef<Partial<Board>>(data ?? createDefaultBoard());
   const layoutGetterRef = useRef<LayoutGetter | null>(null);
+  const appliedFiltersRef = useRef<string | null>(null);
 
   const registerLayoutGetter = useCallback((getter: LayoutGetter) => {
     layoutGetterRef.current = getter;
@@ -87,8 +90,30 @@ export function BoardProvider({
 
       boardRef.current = nextBoard;
       setBoard(nextBoard);
+
+      const typedParams = nextBoard.parameters as BoardParameters & {
+        defaultFilters?: Record<string, string>;
+      };
+
+      // Apply saved default filters if viewing and filters aren't already in the URL
+      if (typedParams?.defaultFilters && appliedFiltersRef.current !== data.id) {
+        appliedFiltersRef.current = data.id;
+        const currentParams = new URLSearchParams(searchParams?.toString() || '');
+        let hasChanges = false;
+
+        Object.entries(typedParams.defaultFilters).forEach(([key, value]) => {
+          if (!currentParams.has(key)) {
+            currentParams.set(key, String(value));
+            hasChanges = true;
+          }
+        });
+
+        if (hasChanges) {
+          router.replace(`?${currentParams.toString()}`);
+        }
+      }
     }
-  }, [data]);
+  }, [data, router, searchParams]);
 
   const { mutateAsync, isPending } = useMutation({
     mutationFn: (boardData: Partial<Board>) => {
@@ -119,9 +144,37 @@ export function BoardProvider({
 
     // Get current layout sizes from BoardEditBody if registered
     const layoutData = layoutGetterRef.current?.();
-    const parameters = sanitizeBoardParameters(
-      layoutData ? { ...currentBoard.parameters, ...layoutData } : currentBoard.parameters,
-    );
+
+    // Extract current view filters
+    const defaultFilters: Record<string, string> = {};
+    const filterKeys = [
+      'dateRange', 'startAt', 'endAt', 'segment',
+      'browser', 'os', 'device', 'screen', 'language', 'country', 'region', 'city',
+      'url', 'referrer', 'title', 'host', 'event',
+      'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'
+    ];
+
+    if (searchParams) {
+      filterKeys.forEach(key => {
+        const val = searchParams.get(key);
+        if (val) {
+          defaultFilters[key] = val;
+        }
+      });
+    }
+
+    const mergedParameters = {
+      ...currentBoard.parameters,
+      ...layoutData,
+    } as BoardParameters & { defaultFilters?: Record<string, string> };
+
+    if (Object.keys(defaultFilters).length > 0) {
+      mergedParameters.defaultFilters = defaultFilters;
+    } else {
+      delete mergedParameters.defaultFilters;
+    }
+
+    const parameters = sanitizeBoardParameters(mergedParameters);
 
     const result = await mutateAsync({
       ...currentBoard,
@@ -139,7 +192,7 @@ export function BoardProvider({
     }
 
     return result;
-  }, [mutateAsync, toast, t, labels.untitled, messages.saved, touch, router, renderUrl]);
+  }, [mutateAsync, toast, t, labels.untitled, messages.saved, touch, router, renderUrl, searchParams]);
 
   if (boardId && isFetching && isLoading) {
     return <Loading placement="absolute" />;
