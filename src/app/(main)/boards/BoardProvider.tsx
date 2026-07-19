@@ -2,7 +2,7 @@
 import { Loading, useToast } from '@umami/react-zen';
 import { createContext, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { v4 as uuid } from 'uuid';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useApi, useMessages, useModified, useNavigation } from '@/components/hooks';
 import { useBoardQuery } from '@/components/hooks/queries/useBoardQuery';
 import { BOARD_TYPES, getBoardType } from '@/lib/boards';
@@ -69,6 +69,7 @@ export function BoardProvider({
   const { toast } = useToast();
   const { t, labels, messages } = useMessages();
   const { router, renderUrl, teamId } = useNavigation();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const [board, setBoard] = useState<Partial<Board>>(data ?? createDefaultBoard());
@@ -108,12 +109,12 @@ export function BoardProvider({
           }
         });
 
-        if (hasChanges) {
-          router.replace(`?${currentParams.toString()}`);
+        if (hasChanges && pathname) {
+          router.replace(`${pathname}?${currentParams.toString()}`, { scroll: false });
         }
       }
     }
-  }, [data, router, searchParams]);
+  }, [data, router, pathname, searchParams]);
 
   const { mutateAsync, isPending } = useMutation({
     mutationFn: (boardData: Partial<Board>) => {
@@ -148,7 +149,8 @@ export function BoardProvider({
     // Extract current view filters
     const defaultFilters: Record<string, string> = {};
     const filterKeys = [
-      'dateRange', 'startAt', 'endAt', 'segment',
+      'dateRange', 'startAt', 'endAt', 'segment', 
+      'compare', 'compareStartAt', 'compareEndAt', 'compareDateRange',
       'browser', 'os', 'device', 'screen', 'language', 'country', 'region', 'city',
       'url', 'referrer', 'title', 'host', 'event',
       'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'
