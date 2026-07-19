@@ -77,11 +77,18 @@ export function BoardProvider({
   const layoutGetterRef = useRef<LayoutGetter | null>(null);
   const appliedFiltersRef = useRef<string | null>(null);
 
+  // Capture the exact search parameters on the very first mount.
+  // This allows us to differentiate between user-provided share links and auto-injected fallbacks.
+  const initialParamsRef = useRef<URLSearchParams | null>(null);
+  if (initialParamsRef.current === null) {
+    initialParamsRef.current = new URLSearchParams(searchParams?.toString() || '');
+  }
+
   const registerLayoutGetter = useCallback((getter: LayoutGetter) => {
     layoutGetterRef.current = getter;
   }, []);
 
-  // 1. Initialize board state from server data (ignoring URL changes)
+  // 1. Initialize board state from server data
   useEffect(() => {
     if (data) {
       const nextBoard = {
@@ -96,7 +103,7 @@ export function BoardProvider({
   }, [data]);
 
   // 2. Compute hydration logic during render to block child components from injecting defaults
-  const currentParams = searchParams ? new URLSearchParams(searchParams.toString()) : new URLSearchParams();
+  const currentParams = new URLSearchParams(searchParams?.toString() || '');
   let needsHydration = false;
   const hydratedParams = new URLSearchParams(currentParams.toString());
 
@@ -105,10 +112,13 @@ export function BoardProvider({
     
     if (typedParams?.defaultFilters) {
       Object.entries(typedParams.defaultFilters).forEach(([key, value]) => {
-        // If the URL lacks the saved filter, we must hydrate it
-        if (!currentParams.has(key)) {
-          hydratedParams.set(key, String(value));
-          needsHydration = true;
+        // Only hydrate if the param wasn't explicitly supplied in the initial URL load
+        if (!initialParamsRef.current?.has(key)) {
+          // Prevent infinite loops by only updating if the value actually differs
+          if (currentParams.get(key) !== String(value)) {
+            hydratedParams.set(key, String(value));
+            needsHydration = true;
+          }
         }
       });
     }
@@ -118,11 +128,12 @@ export function BoardProvider({
 
   useEffect(() => {
     if (needsHydration) {
-      // Do not mark as applied yet; wait for Next.js to update the URL and trigger a re-render
+      // Trigger URL replacement but do not mark as applied yet.
+      // We wait for Next.js to update the URL and trigger a re-render.
       const path = pathname ? `${pathname}?${hydratedParamsString}` : `?${hydratedParamsString}`;
       router.replace(path, { scroll: false });
     } else if (data && appliedFiltersRef.current !== data.id) {
-      // Hydration is complete or wasn't needed, mark as applied so we don't repeat
+      // Once we don't need hydration (either it finished or wasn't needed), lock it.
       appliedFiltersRef.current = data.id;
     }
   }, [needsHydration, hydratedParamsString, data, pathname, router]);
@@ -153,26 +164,14 @@ export function BoardProvider({
   const saveBoard = useCallback(async () => {
     const currentBoard = boardRef.current;
     const defaultName = t(labels.untitled);
-
     const layoutData = layoutGetterRef.current?.();
 
-    // Extract current view filters comprehensively 
+    // Dynamically extract ALL current search parameters to reliably capture the exact date and segment states.
+    // This prevents missing parameters if the time filter uses unexpected or changing keys.
     const defaultFilters: Record<string, string> = {};
-    const filterKeys = [
-      'dateRange', 'startAt', 'endAt', 'segment', 
-      'compare', 'compareStartAt', 'compareEndAt', 'compareDateRange',
-      'startDate', 'endDate', 'range', 'start', 'end', 
-      'browser', 'os', 'device', 'screen', 'language', 'country', 'region', 'city',
-      'url', 'referrer', 'title', 'host', 'event',
-      'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'
-    ];
-
     if (searchParams) {
-      filterKeys.forEach(key => {
-        const val = searchParams.get(key);
-        if (val) {
-          defaultFilters[key] = val;
-        }
+      Array.from(searchParams.entries()).forEach(([key, val]) => {
+        defaultFilters[key] = val;
       });
     }
 
@@ -208,7 +207,7 @@ export function BoardProvider({
   }, [mutateAsync, toast, t, labels.untitled, messages.saved, touch, router, renderUrl, searchParams]);
 
   // Block rendering of child components if fetching data or if we are actively hydrating the URL. 
-  // This physically prevents DatePicker from injecting default fallbacks prematurely.
+  // This physically prevents components from prematurely injecting default fallbacks.
   if ((boardId && isFetching && isLoading) || needsHydration) {
     return <Loading placement="absolute" />;
   }
